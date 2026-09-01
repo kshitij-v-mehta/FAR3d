@@ -28,6 +28,7 @@ program far3d
   use tools
   use scratch
   use openacc
+  use adios_io_mod
   
   implicit none
 
@@ -44,17 +45,15 @@ program far3d
   namelist/nam_arr/mm,nn,mmeq,nneq,widthi,gammai,cnep,ctep,cvep,cnfp,cvfp,cnfpalp,cvfpalp,eqvt,eqvp, &
        srcsinkth,srcsinkEP1,srcsinkEP2
 
-  integer :: i,l,j,iend,l2t,mnum,idum,mjo,leqmaxo,ierror
+  integer :: i,l,j,iend,l2t,mnum,mjo,leqmaxo,ierror
   integer, dimension(8) :: values_s,values_e
-  real(IDP) :: d,dk,scmn,scmx,sclmn,sclmx,scnorm,dum
+  real(IDP) :: d,dk,scmn,scmx,sclmn,sclmx,scnorm
   character(len=132) :: char5
   character(len=10) :: timew,datew,zone_h
   character(len=16) :: confil
   character(len=1) :: t
   character(len=10) :: hifrq_out
   character(len=14) :: phi_hifrq_out
-  character(len=2), dimension(3) :: numrunp
-  character(len=5) :: numvac
 
 !  Input read 
                                                    
@@ -78,6 +77,10 @@ program far3d
 ! Find the ID of this PE
   call MPI_COMM_RANK(MPI_COMM_WORLD, myPE  , ierror)
   numPEsm1 = numPEs-1
+  ! Restart I/O is per-rank independent (writes are rank-0-only; reads
+  ! happen redundantly on every rank), so the ADIOS2 context is bound to
+  ! MPI_COMM_SELF rather than MPI_COMM_WORLD - see src/adios_io_mod.f90.
+  call adios_init(MPI_COMM_SELF)
   numdev = acc_get_num_devices(ACC_DEVICE_NVIDIA)
   call acc_set_device_num(myPE,ACC_DEVICE_NVIDIA)
   call acc_init(ACC_DEVICE_NVIDIA)
@@ -117,30 +120,39 @@ program far3d
 
   if (nstres /= 0) then
 
-     confil="fs"//numruno(1)//numruno(2)//numruno(3)
-     open(unit=8,file=confil,status='old',convert='big_endian',form='unformatted')
+     ! Peek the previous run's restart dataset before nam_par/allocation:
+     ! ihist (to size numhist), mj/lmax/leqmax (grid sizes needed to
+     ! allocate the grid/mode arrays), and ext_prof/epflr_on/r_epflr/
+     ! alpha_on/iflr_on/iflr/ieldamp_on/r_epflralp as namelist fallback
+     ! defaults carried over from that run. rddump (called later, from
+     ! resume) reopens the same file for the real read.
+     confil="fs"//numruno(1)//numruno(2)//numruno(3)//".bp"
+     call adios_open_read(confil)
 
-     read(8) ihist
-     rewind(8)
+     call adios_get_i("ihist", ihist)
+     call adios_get_i("mj", mjo)
+     call adios_get_i("lmax", lmaxo)
+     call adios_get_i("leqmax", leqmaxo)
+     call adios_get_i("ext_prof", ext_prof)
+     call adios_get_i("epflr_on", epflr_on)
+     call adios_get_r("r_epflr", r_epflr)
+     call adios_get_i("alpha_on", alpha_on)
+     call adios_get_i("iflr_on", iflr_on)
+     call adios_get_r("iflr", iflr)
+     call adios_get_i("ieldamp_on", ieldamp_on)
+     call adios_get_r("r_epflralp", r_epflralp)
 
-  end if
-
-  ihist=ihist+1
-
-  allocate (numhist(ihist))
-
-  if (nstres /= 0) then
-
-     read(8) idum,numrunp,numrunp,numrunp,idum,numvac,(numhist(i),i=1,ihist-1),(idum,i=1,10),dum,(idum,i=1,6), &
-             (dum,i=1,8),ext_prof,epflr_on,r_epflr,alpha_on,iflr_on,iflr,idum,ieldamp_on,(dum,i=1,9),r_epflralp
-     read(8) mjo,lmaxo,leqmaxo
-     rewind(8)
+     call adios_close_engine
 
      mj=mjo
      lmax=lmaxo
      leqmax=leqmaxo
 
   end if
+
+  ihist=ihist+1
+
+  allocate (numhist(ihist))
 
   read(5,nam_par)
 
@@ -386,6 +398,8 @@ program far3d
 
      call elapsed_time(values_s,values_e)
   end if
+
+  call adios_finalize
 
   CALL MPI_FINALIZE(ierror)
 

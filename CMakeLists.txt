@@ -24,6 +24,11 @@ find_package(MPI REQUIRED)
 find_package(OpenMP REQUIRED)
 
 # -------------------------
+# Find ADIOS2 (restart I/O)
+# -------------------------
+find_package(ADIOS2 REQUIRED)
+
+# -------------------------
 # Source files
 # -------------------------
 # Automatically include all Fortran source files
@@ -40,6 +45,7 @@ target_include_directories(far3d.x PRIVATE)
 target_link_libraries(far3d.x
     MPI::MPI_Fortran
     OpenMP::OpenMP_Fortran
+    adios2::fortran_mpi
 )
 # -------------------------
 # Optional: Compiler flags

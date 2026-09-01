@@ -124,9 +124,8 @@ CONTAINS
     namelist/nam_arr/mm,nn,mmeq,nneq,widthi,gammai,cnep,ctep,cvep,cnfp,cvfp,cnfpalp,cvfpalp,eqvt,eqvp, &
          srcsinkth,srcsinkEP1,srcsinkEP2
 
-    integer :: i,j,l,idum,ierr,iPE,tag
+    integer :: i,ierr,iPE,tag
     integer, dimension(MPI_STATUS_SIZE) :: status
-    real(IDP) :: dum
 
     ! This subroutine is called if the simulation is a continuation run
 
@@ -214,70 +213,11 @@ CONTAINS
     sc9=0.
     sc10=0.
 
-    if (lmax < lmaxo) then
-       if (myPE == 0) then
-          read(8) ((psi(j,l),j=0,mj),l=1,lmax)
-          read(8) ((phi(j,l),j=0,mj),l=1,lmax)
-          read(8) ((pr(j,l),j=0,mj),l=1,lmax)
-          read(8) ((nf(j,l),j=0,mj),l=1,lmax)
-          read(8) ((vprlf(j,l),j=0,mj),l=1,lmax)
-          read(8) ((vthprlf(j,l),j=0,mj),l=1,lmax)
-          if (alpha_on == 1) then
-             read(8) ((nalp(j,l),j=0,mj),l=1,lmax)
-             read(8) ((vprlalp(j,l),j=0,mj),l=1,lmax)
-          end if
-       else
-          read(8) ((dum,j=0,mj_start-1),(psi(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmax)
-          read(8) ((dum,j=0,mj_start-1),(phi(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmax)
-          read(8) ((dum,j=0,mj_start-1),(pr(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmax)
-          read(8) ((dum,j=0,mj_start-1),(nf(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmax)
-          read(8) ((dum,j=0,mj_start-1),(vprlf(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmax)
-          read(8) ((dum,j=0,mj_start-1),(vthprlf(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmax)
-          if (alpha_on == 1) then
-             read(8) ((dum,j=0,mj_start-1),(nalp(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmax)
-             read(8) ((dum,j=0,mj_start-1),(vprlalp(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmax)
-          end if
-       end if
-    else
-       if (myPE == 0) then
-          read(8) ((psi(j,l),j=0,mj),l=1,lmaxo)
-          read(8) ((phi(j,l),j=0,mj),l=1,lmaxo)
-          read(8) ((pr(j,l),j=0,mj),l=1,lmaxo)
-          read(8) ((nf(j,l),j=0,mj),l=1,lmaxo)
-          read(8) ((vprlf(j,l),j=0,mj),l=1,lmaxo)
-          read(8) ((vthprlf(j,l),j=0,mj),l=1,lmaxo)
-          if (alpha_on == 1) then
-             read(8) ((nalp(j,l),j=0,mj),l=1,lmaxo)
-             read(8) ((vprlalp(j,l),j=0,mj),l=1,lmaxo)
-          end if
-       else
-          read(8) ((dum,j=0,mj_start-1),(psi(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmaxo)
-          read(8) ((dum,j=0,mj_start-1),(phi(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmaxo)
-          read(8) ((dum,j=0,mj_start-1),(pr(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmaxo)
-          read(8) ((dum,j=0,mj_start-1),(nf(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmaxo)
-          read(8) ((dum,j=0,mj_start-1),(vprlf(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmaxo)
-          read(8) ((dum,j=0,mj_start-1),(vthprlf(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmaxo)
-          if (alpha_on == 1) then
-             read(8) ((dum,j=0,mj_start-1),(nalp(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmaxo)
-             read(8) ((dum,j=0,mj_start-1),(vprlalp(j,l),j=mj_start,mj_end),(dum,j=mj_end+1,mj),l=1,lmaxo)
-          end if
-       end if
-    end if
-
-    if (old_rd) then
-       read(8) etascl,reta,eta0,etalmb,ietaeq,dum,idum,dum,stdifp,stdifu,stdifnf,stdifv,stdifvf, &
-            stdifnalp,stdifvalp,s,gamma,xle,ipert,(dum,l=1,lmaxo),(dum,l=1,lmaxo),dum
-    else
-       read(8) etascl,reta,eta0,etalmb,ietaeq,stdifp,stdifu,stdifnf,stdifv,stdifvf, &
-            stdifnalp,stdifvalp,s,gamma,xle,ipert,(dum,l=1,lmaxo),(dum,l=1,lmaxo),dum
-       read(8) ext_prof_name,difnr_on,nopsievol_on,noprevol_on,nonfevol_on,nonalpevol_on, &
-            src_sink_th_on,src_sink_EP1_on,src_sink_EP2_on,src_sink_DIIID_on,src_sink_ITER_on,rsrc,wsrc,asrc, &
-            rsrc_EP1,wsrc_EP1,asrc_EP1,rsrc_EP2,wsrc_EP2,asrc_EP2,AWfctr,Nfctr,AWfctr_dif,Rfctr,Wfctr
-       read(8) (srcsinkth(i),i=0,10),(srcsinkEP1(i),i=0,10),(srcsinkEP2(i),i=0,10)
-    end if
-
-    rewind(8)
-    close(unit=8)
+    ! Reads the 8 dynamical fields (each rank fetching only its own
+    ! mj_start:mj_end slice, or the full range on rank 0, via an ADIOS2
+    ! selection) and the trailing scalar/flag records, then closes the
+    ! engine opened by rddump above.
+    call rddump_flds
 
     ! Equilibrium profiles are modified to flux surface averages when nonlin=0
 

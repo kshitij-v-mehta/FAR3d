@@ -7,6 +7,7 @@ MODULE output_mod
   use dynamo
   use dbyd
   use scratch
+  use adios_io_mod
 
   IMPLICIT NONE
 
@@ -458,34 +459,99 @@ CONTAINS
 
   subroutine rddump
 
+    ! Phase 1 of the restart read: header, grid/mode arrays, equilibrium and
+    ! geometry arrays, and eta/dt/time. Leaves the ADIOS2 engine open -
+    ! rddump_flds (called later from resume, once mj_start/mj_end/lmax-sized
+    ! arrays are allocated) reads the rest (dynamical fields, trailing
+    ! scalars/flags) from the same still-open engine and closes it.
+    !
+    ! Only understands ADIOS2 restart datasets written by the current
+    ! wrdump - the pre-ADIOS2 raw-binary layout (and its old_rd variant) is
+    ! no longer read.
+
     implicit none
 
-    integer :: i,l,j,ihisto,idum
-    real(IDP) :: pertsclo,dum
     character(len=2), dimension(3) :: numrunp
-    character(len=5) :: numvac
+    integer :: lcnt, ihisto
 
-    if (old_rd) then
-       read(8) ihisto,numruno,numrunp,numruns,idum,numvac,(numhist(i),i=1,ihisto),maxstp,nstep, &
-            ndump,nprint,lplots,idum,idum,idum,idum,itime,dt0,nstep1,nonlin,m0dy,nocpl,noprevol_on,idum, &
-            Adens,Bdens,LcA0,LcA1,LcA2,LcA3,omcy,dpres,ext_prof,epflr_on,r_epflr,alpha_on,iflr_on,iflr,twofl_on,ieldamp_on, &
-            omegar,bet0_alp,Adensalp,Bdensalp,LcA0alp,LcA1alp,LcA2alp,LcA3alp,omcyalp,r_epflralp
-    else
-       read(8) ihisto,numruno,numrunp,numruns,(numhist(i),i=1,ihisto),maxstp,nstep, &
-            ndump,nprint,lplots,itime,dt0,nstep1,nonlin,m0dy,nocpl,noprevol_on, &
-            Adens,Bdens,LcA0,LcA1,LcA2,LcA3,omcy,dpres,ext_prof,epflr_on,r_epflr,alpha_on,iflr_on,iflr,twofl_on,ieldamp_on, &
-            omegar,bet0_alp,Adensalp,Bdensalp,LcA0alp,LcA1alp,LcA2alp,LcA3alp,omcyalp,r_epflralp,ext_prof_name, &
-            trapped_on,omcyb,rbound,B_par_on
-    end if
-    read(8) mj,lmaxo,leqmax,mjm1
-    if (lmax < lmaxo) then
-       read(8) (r(j),j=0,mj),(mm(l),l=1,lmax),(idum,l=lmax+1,lmaxo),(nn(l),l=1,lmax),(idum,l=lmax+1,lmaxo), &
-            (mmeq(l),l=1,leqmax),(nneq(l),l=1,leqmax),(rinv(j),j=0,mj), &  
-            (dc1m(j),j=1,mj),(dc1p(j),j=1,mj),(dc2m(j),j=1,mj),(dc2p(j),j=1,mj),(del2cm(j),j=1,mj),(del2cp(j),j=1,mj)
-    else
-       read(8) (r(j),j=0,mj),(mm(l),l=1,lmaxo),(nn(l),l=1,lmaxo),(mmeq(l),l=1,leqmax),(nneq(l),l=1,leqmax),(rinv(j),j=0,mj), &  
-            (dc1m(j),j=1,mj),(dc1p(j),j=1,mj),(dc2m(j),j=1,mj),(dc2p(j),j=1,mj),(del2cm(j),j=1,mj),(del2cp(j),j=1,mj)
-    end if
+    if (old_rd) write (0,'(" WARNING: old_rd is set but is no longer honored - ", &
+         "restart reads only understand ADIOS2 .bp datasets")')
+
+    call adios_open_read("fs"//numruno(1)//numruno(2)//numruno(3)//".bp")
+
+    ! ihist itself is NOT re-read here: the caller (far3d.f90, before
+    ! allocating numhist) already peeked ihist from this same file and set
+    ! the global ihist = (file's ihist) + 1 for this run; ihisto below is
+    ! just a local re-read of that same file field, used to size numhist.
+    call adios_get_i("ihist", ihisto)
+    call adios_get_sarr("numrun", numruno)
+    call adios_get_sarr("numruno", numrunp)
+    call adios_get_sarr("numruns", numruns)
+    call adios_get_sarr("numhist", numhist(1:ihisto))
+    call adios_get_i("maxstp", maxstp)
+    call adios_get_i("nstep", nstep)
+    call adios_get_i("ndump", ndump)
+    call adios_get_i("nprint", nprint)
+    call adios_get_i("lplots", lplots)
+    call adios_get_i("itime", itime)
+    call adios_get_r("dt0", dt0)
+    call adios_get_i("nstep1", nstep1)
+    call adios_get_i("nonlin", nonlin)
+    call adios_get_i("m0dy", m0dy)
+    call adios_get_i("nocpl", nocpl)
+    call adios_get_i("noprevol_on", noprevol_on)
+    call adios_get_r("Adens", Adens)
+    call adios_get_r("Bdens", Bdens)
+    call adios_get_r("LcA0", LcA0)
+    call adios_get_r("LcA1", LcA1)
+    call adios_get_r("LcA2", LcA2)
+    call adios_get_r("LcA3", LcA3)
+    call adios_get_r("omcy", omcy)
+    call adios_get_r("dpres", dpres)
+    call adios_get_i("ext_prof", ext_prof)
+    call adios_get_i("epflr_on", epflr_on)
+    call adios_get_r("r_epflr", r_epflr)
+    call adios_get_i("alpha_on", alpha_on)
+    call adios_get_i("iflr_on", iflr_on)
+    call adios_get_r("iflr", iflr)
+    call adios_get_i("twofl_on", twofl_on)
+    call adios_get_i("ieldamp_on", ieldamp_on)
+    call adios_get_r("omegar", omegar)
+    call adios_get_r("bet0_alp", bet0_alp)
+    call adios_get_r("Adensalp", Adensalp)
+    call adios_get_r("Bdensalp", Bdensalp)
+    call adios_get_r("LcA0alp", LcA0alp)
+    call adios_get_r("LcA1alp", LcA1alp)
+    call adios_get_r("LcA2alp", LcA2alp)
+    call adios_get_r("LcA3alp", LcA3alp)
+    call adios_get_r("omcyalp", omcyalp)
+    call adios_get_r("r_epflralp", r_epflralp)
+    call adios_get_s("ext_prof_name", ext_prof_name)
+    call adios_get_i("trapped_on", trapped_on)
+    call adios_get_r("omcyb", omcyb)
+    call adios_get_r("rbound", rbound)
+    call adios_get_i("B_par_on", B_par_on)
+
+    call adios_get_i("mj", mj)
+    call adios_get_i("lmax", lmaxo)
+    call adios_get_i("leqmax", leqmax)
+    call adios_get_i("mjm1", mjm1)
+
+    ! mm/nn (mode numbers) only exist up to lmaxo in the file; when the new
+    ! run asks for fewer modes (lmax < lmaxo) only the first lmax are kept
+    lcnt = min(lmax,lmaxo)
+    call adios_get_r1("r", r)
+    call adios_get_i1("mm", mm(1:lcnt))
+    call adios_get_i1("nn", nn(1:lcnt))
+    call adios_get_i1("mmeq", mmeq)
+    call adios_get_i1("nneq", nneq)
+    call adios_get_r1("rinv", rinv)
+    call adios_get_r1("dc1m", dc1m)
+    call adios_get_r1("dc1p", dc1p)
+    call adios_get_r1("dc2m", dc2m)
+    call adios_get_r1("dc2p", dc2p)
+    call adios_get_r1("del2cm", del2cm)
+    call adios_get_r1("del2cp", del2cp)
 
     allocate (sqgi(0:mj,0:leqmax),sqg(0:mj,0:leqmax),bst(0:mj,0:leqmax),grr(0:mj,0:leqmax),grt(0:mj,0:leqmax), &
          gtt(0:mj,0:leqmax),grroj(0:mj,0:leqmax),grtoj(0:mj,0:leqmax),gttoj(0:mj,0:leqmax),jbgrr(0:mj,0:leqmax), &
@@ -494,145 +560,431 @@ CONTAINS
          lplz(0:mj,0:leqmax),djroj(0:mj,0:leqmax),djtoj(0:mj,0:leqmax),djzoj(0:mj,0:leqmax),omdr(0:mj,0:leqmax), &
          omdt(0:mj,0:leqmax),omdz(0:mj,0:leqmax),bmod(0:mj,0:leqmax),dbsjtoj(0:mj,0:leqmax),dbsjzoj(0:mj,0:leqmax))
 
-    read(8) ni,nis,ne,delta,rc,fti,fte
-    if (old_rd) then
-       read(8) (qq(j),j=0,mj),(qqinv(j),j=0,mj),(dum,j=0,mj),(dum,j=0,mj),(preq(j),j=0,mj),(feq(j),j=0,mj), &
-            (cureq(j),j=0,mj),(denseq(j),j=0,mj),(teeq(j),j=0,mj),(nfeq(j),j=0,mj),(vfova(j),j=0,mj),(vzt_eq(j),j=0,mj), &
-            (tieq(j),j=0,mj)
-    else
-       read(8) (qq(j),j=0,mj),(qqinv(j),j=0,mj),(preq(j),j=0,mj),(feq(j),j=0,mj), &
-            (cureq(j),j=0,mj),(denseq(j),j=0,mj),(teeq(j),j=0,mj),(nfeq(j),j=0,mj),(vfova(j),j=0,mj),(vzt_eq(j),j=0,mj), &
-            (tieq(j),j=0,mj),(vth_eq(j),j=0,mj)
+    call adios_get_i("ni", ni)
+    call adios_get_i("nis", nis)
+    call adios_get_i("ne", ne)
+    call adios_get_r("delta", delta)
+    call adios_get_r("rc", rc)
+    call adios_get_r("fti", fti)
+    call adios_get_r("fte", fte)
+
+    call adios_get_r1("qq", qq)
+    call adios_get_r1("qqinv", qqinv)
+    call adios_get_r1("preq", preq)
+    call adios_get_r1("feq", feq)
+    call adios_get_r1("cureq", cureq)
+    call adios_get_r1("denseq", denseq)
+    call adios_get_r1("teeq", teeq)
+    call adios_get_r1("nfeq", nfeq)
+    call adios_get_r1("vfova", vfova)
+    call adios_get_r1("vzt_eq", vzt_eq)
+    call adios_get_r1("tieq", tieq)
+    call adios_get_r1("vth_eq", vth_eq)
+    if (alpha_on == 1) then
+       call adios_get_r1("nalpeq", nalpeq)
+       call adios_get_r1("valphaova", valphaova)
     end if
-    if (alpha_on == 1) read(8) (nalpeq(j),j=0,mj),(valphaova(j),j=0,mj)
     if (ext_prof == 1) then
        allocate (vAlfven(0:mj),vtherm_elecP(0:mj))
-       read(8) (vAlfven(j),j=0,mj),(vtherm_elecP(j),j=0,mj)
+       call adios_get_r1("vAlfven", vAlfven)
+       call adios_get_r1("vtherm_elecP", vtherm_elecP)
     else
-       read(8) (vtherm_elc(j),j=0,mj)
+       call adios_get_r1("vtherm_elc", vtherm_elc)
     end if
-    if (old_rd) then
-       if (lmax < lmaxo) then
-          read(8) idum,ndevice(1),ndevice(2),idum,eps,bet0,bet0_f,idum,dum,dum,dum,(rs(l),l=1,lmax)
-       else
-          read(8) idum,ndevice(1),ndevice(2),idum,eps,bet0,bet0_f,idum,dum,dum,dum,(rs(l),l=1,lmaxo)
-       end if
-    else
-       if (lmax < lmaxo) then
-          read(8) ndevice(1),ndevice(2),eps,bet0,bet0_f,(rs(l),l=1,lmax)
-       else
-          read(8) ndevice(1),ndevice(2),eps,bet0,bet0_f,(rs(l),l=1,lmaxo)
-       end if
-    end if
-    read(8) ((sqgi(j,l),j=0,mj),l=1,leqmax),((sqg(j,l),j=0,mj),l=1,leqmax),((bst(j,l),j=0,mj),l=1,leqmax), &
-         ((grr(j,l),j=0,mj),l=1,leqmax),((grt(j,l),j=0,mj),l=1,leqmax),((gtt(j,l),j=0,mj),l=1,leqmax), &
-         ((grroj(j,l),j=0,mj),l=1,leqmax),((grtoj(j,l),j=0,mj),l=1,leqmax),((gttoj(j,l),j=0,mj),l=1,leqmax), &
-         ((jbgrr(j,l),j=0,mj),l=1,leqmax),((jbgrt(j,l),j=0,mj),l=1,leqmax),((jbgtt(j,l),j=0,mj),l=1,leqmax), &
-         ((lplrr(j,l),j=0,mj),l=1,leqmax),((lplrt(j,l),j=0,mj),l=1,leqmax),((lplrz(j,l),j=0,mj),l=1,leqmax), &
-         ((lpltt(j,l),j=0,mj),l=1,leqmax),((lpltz(j,l),j=0,mj),l=1,leqmax),((lplzz(j,l),j=0,mj),l=1,leqmax), &
-         ((lplr(j,l),j=0,mj),l=1,leqmax),((lplt(j,l),j=0,mj),l=1,leqmax),((lplz(j,l),j=0,mj),l=1,leqmax), &
-         ((djroj(j,l),j=0,mj),l=1,leqmax),((djtoj(j,l),j=0,mj),l=1,leqmax),((djzoj(j,l),j=0,mj),l=1,leqmax), &
-         ((omdr(j,l),j=0,mj),l=1,leqmax),((omdt(j,l),j=0,mj),l=1,leqmax),((omdz(j,l),j=0,mj),l=1,leqmax), &
-         ((bmod(j,l),j=0,mj),l=1,leqmax),((dbsjtoj(j,l),j=0,mj),l=1,leqmax),((dbsjzoj(j,l),j=0,mj),l=1,leqmax)
+    call adios_get_sarr("ndevice", ndevice)
+    call adios_get_r("eps", eps)
+    call adios_get_r("bet0", bet0)
+    call adios_get_r("bet0_f", bet0_f)
+    call adios_get_r1("rs", rs(1:lcnt))
+
+    call adios_get_r2("sqgi", sqgi(:,1:leqmax))
+    call adios_get_r2("sqg", sqg(:,1:leqmax))
+    call adios_get_r2("bst", bst(:,1:leqmax))
+    call adios_get_r2("grr", grr(:,1:leqmax))
+    call adios_get_r2("grt", grt(:,1:leqmax))
+    call adios_get_r2("gtt", gtt(:,1:leqmax))
+    call adios_get_r2("grroj", grroj(:,1:leqmax))
+    call adios_get_r2("grtoj", grtoj(:,1:leqmax))
+    call adios_get_r2("gttoj", gttoj(:,1:leqmax))
+    call adios_get_r2("jbgrr", jbgrr(:,1:leqmax))
+    call adios_get_r2("jbgrt", jbgrt(:,1:leqmax))
+    call adios_get_r2("jbgtt", jbgtt(:,1:leqmax))
+    call adios_get_r2("lplrr", lplrr(:,1:leqmax))
+    call adios_get_r2("lplrt", lplrt(:,1:leqmax))
+    call adios_get_r2("lplrz", lplrz(:,1:leqmax))
+    call adios_get_r2("lpltt", lpltt(:,1:leqmax))
+    call adios_get_r2("lpltz", lpltz(:,1:leqmax))
+    call adios_get_r2("lplzz", lplzz(:,1:leqmax))
+    call adios_get_r2("lplr", lplr(:,1:leqmax))
+    call adios_get_r2("lplt", lplt(:,1:leqmax))
+    call adios_get_r2("lplz", lplz(:,1:leqmax))
+    call adios_get_r2("djroj", djroj(:,1:leqmax))
+    call adios_get_r2("djtoj", djtoj(:,1:leqmax))
+    call adios_get_r2("djzoj", djzoj(:,1:leqmax))
+    call adios_get_r2("omdr", omdr(:,1:leqmax))
+    call adios_get_r2("omdt", omdt(:,1:leqmax))
+    call adios_get_r2("omdz", omdz(:,1:leqmax))
+    call adios_get_r2("bmod", bmod(:,1:leqmax))
+    call adios_get_r2("dbsjtoj", dbsjtoj(:,1:leqmax))
+    call adios_get_r2("dbsjzoj", dbsjzoj(:,1:leqmax))
+
     if (ieldamp_on == 1) then
        allocate (eildr(0:mj,0:leqmax),eildt(0:mj,0:leqmax),eildz(0:mj,0:leqmax),eildrr(0:mj,0:leqmax), &
             eildrt(0:mj,0:leqmax),eildrz(0:mj,0:leqmax),eildtt(0:mj,0:leqmax),eildtz(0:mj,0:leqmax), &
             eildzz(0:mj,0:leqmax))
-       read(8) ((eildr(j,l),j=0,mj),l=1,leqmax),((eildt(j,l),j=0,mj),l=1,leqmax), &
-            ((eildz(j,l),j=0,mj),l=1,leqmax),((eildrr(j,l),j=0,mj),l=1,leqmax), &
-            ((eildrt(j,l),j=0,mj),l=1,leqmax),((eildrz(j,l),j=0,mj),l=1,leqmax), &
-            ((eildtt(j,l),j=0,mj),l=1,leqmax),((eildtz(j,l),j=0,mj),l=1,leqmax), &
-            ((eildzz(j,l),j=0,mj),l=1,leqmax)
+       call adios_get_r2("eildr", eildr(:,1:leqmax))
+       call adios_get_r2("eildt", eildt(:,1:leqmax))
+       call adios_get_r2("eildz", eildz(:,1:leqmax))
+       call adios_get_r2("eildrr", eildrr(:,1:leqmax))
+       call adios_get_r2("eildrt", eildrt(:,1:leqmax))
+       call adios_get_r2("eildrz", eildrz(:,1:leqmax))
+       call adios_get_r2("eildtt", eildtt(:,1:leqmax))
+       call adios_get_r2("eildtz", eildtz(:,1:leqmax))
+       call adios_get_r2("eildzz", eildzz(:,1:leqmax))
     end if
     if (trapped_on == 1) then
        allocate (omdrprp(0:mj,0:leqmax),omdtprp(0:mj,0:leqmax),omdzprp(0:mj,0:leqmax))
-       read(8) ((omdrprp(j,l),j=0,mj),l=1,leqmax),((omdtprp(j,l),j=0,mj),l=1,leqmax), &
-            ((omdzprp(j,l),j=0,mj),l=1,leqmax)
+       call adios_get_r2("omdrprp", omdrprp(:,1:leqmax))
+       call adios_get_r2("omdtprp", omdtprp(:,1:leqmax))
+       call adios_get_r2("omdzprp", omdzprp(:,1:leqmax))
     end if
 
-    read(8) (eta(j),j=0,mj),dt,time
+    call adios_get_r1("eta", eta)
+    call adios_get_r("dt", dt)
+    call adios_get_r("time", time)
 
   end subroutine rddump
 
+  subroutine rddump_flds
+
+    ! Phase 2 of the restart read (called from resume, after setmod/mmlims
+    ! and the field-array allocations that need mj_start/mj_end/lmax): reads
+    ! the 8 dynamical fields (using an ADIOS2 selection to fetch only this
+    ! rank's mj_start:mj_end radial slice directly, replacing the old
+    ! read-everything-then-discard dummy reads) and the trailing scalar/flag
+    ! records, then closes the engine opened by rddump.
+
+    use processor
+    use var_para
+
+    implicit none
+
+    integer :: j0, n0, lcnt
+
+    if (myPE == 0) then
+       j0 = 0
+       n0 = mj+1
+    else
+       j0 = mj_start
+       n0 = mj_end-mj_start+1
+    end if
+    lcnt = min(lmax,lmaxo)
+
+    call adios_get_r2_slice("psi", psi(:,1:lcnt), j0, n0)
+    call adios_get_r2_slice("phi", phi(:,1:lcnt), j0, n0)
+    call adios_get_r2_slice("pr", pr(:,1:lcnt), j0, n0)
+    call adios_get_r2_slice("nf", nf(:,1:lcnt), j0, n0)
+    call adios_get_r2_slice("vprlf", vprlf(:,1:lcnt), j0, n0)
+    call adios_get_r2_slice("vthprlf", vthprlf(:,1:lcnt), j0, n0)
+    if (alpha_on == 1) then
+       call adios_get_r2_slice("nalp", nalp(:,1:lcnt), j0, n0)
+       call adios_get_r2_slice("vprlalp", vprlalp(:,1:lcnt), j0, n0)
+    end if
+
+    call adios_get_r("etascl", etascl)
+    call adios_get_r("reta", reta)
+    call adios_get_r("eta0", eta0)
+    call adios_get_r("etalmb", etalmb)
+    call adios_get_i("ietaeq", ietaeq)
+    call adios_get_r("stdifp", stdifp)
+    call adios_get_r("stdifu", stdifu)
+    call adios_get_r("stdifnf", stdifnf)
+    call adios_get_r("stdifv", stdifv)
+    call adios_get_r("stdifvf", stdifvf)
+    call adios_get_r("stdifnalp", stdifnalp)
+    call adios_get_r("stdifvalp", stdifvalp)
+    call adios_get_r("s", s)
+    call adios_get_r("gamma", gamma)
+    call adios_get_r("xle", xle)
+    call adios_get_i("ipert", ipert)
+    ! widthi/gammai/pertscl are dumped for provenance but (as in the
+    ! original code) are always sourced from the namelist on resume, not
+    ! restored here - matches historical behavior, not re-read.
+
+    call adios_get_i("difnr_on", difnr_on)
+    call adios_get_i("nopsievol_on", nopsievol_on)
+    call adios_get_i("noprevol_on", noprevol_on)
+    call adios_get_i("nonfevol_on", nonfevol_on)
+    call adios_get_i("nonalpevol_on", nonalpevol_on)
+    call adios_get_i("src_sink_th_on", src_sink_th_on)
+    call adios_get_i("src_sink_EP1_on", src_sink_EP1_on)
+    call adios_get_i("src_sink_EP2_on", src_sink_EP2_on)
+    call adios_get_i("src_sink_DIIID_on", src_sink_DIIID_on)
+    call adios_get_i("src_sink_ITER_on", src_sink_ITER_on)
+    call adios_get_r("rsrc", rsrc)
+    call adios_get_r("wsrc", wsrc)
+    call adios_get_r("asrc", asrc)
+    call adios_get_r("rsrc_EP1", rsrc_EP1)
+    call adios_get_r("wsrc_EP1", wsrc_EP1)
+    call adios_get_r("asrc_EP1", asrc_EP1)
+    call adios_get_r("rsrc_EP2", rsrc_EP2)
+    call adios_get_r("wsrc_EP2", wsrc_EP2)
+    call adios_get_r("asrc_EP2", asrc_EP2)
+    call adios_get_r("AWfctr", AWfctr)
+    call adios_get_r("Nfctr", Nfctr)
+    call adios_get_r("AWfctr_dif", AWfctr_dif)
+    call adios_get_r("Rfctr", Rfctr)
+    call adios_get_r("Wfctr", Wfctr)
+
+    call adios_get_r1("srcsinkth", srcsinkth)
+    call adios_get_r1("srcsinkEP1", srcsinkEP1)
+    call adios_get_r1("srcsinkEP2", srcsinkEP2)
+
+    call adios_close_engine
+
+  end subroutine rddump_flds
+
   subroutine wrdump(i_diag, is_restart)
+
+    ! Writes one self-describing ADIOS2 .bp restart dataset, replacing the
+    ! old positional big_endian binary chain - same one-dataset-per-dump
+    ! naming as before (numrun-based filename, now with a .bp suffix), just
+    ! a named-variable/attribute container instead of an unnamed byte
+    ! stream. Named variables mean write order no longer has to match the
+    ! reader at all.
 
     implicit none
 
     integer, intent(in) :: i_diag
     logical, intent(in) :: is_restart
-    integer :: i,l,j
-    character(len=12) :: confil
+    character(len=15) :: confil
     character(len=6) :: i_diag_str
 
     if (is_restart) then
-       confil="fs"//numrun(1)//numrun(2)//numrun(3)
-       open(unit=7,file=confil,status='new',convert='big_endian',form='unformatted')
+       confil="fs"//numrun(1)//numrun(2)//numrun(3)//".bp"
     else
        write(i_diag_str, '("_",I5.5)') i_diag
-       confil="fs"//numrun(1)//numrun(2)//i_diag_str
-       open(unit=7,file=confil,status='new',convert='big_endian',form='unformatted')   
+       confil="fs"//numrun(1)//numrun(2)//i_diag_str//".bp"
     end if
 
-    write(7) ihist,numrun,numruno,numruns,(numhist(i),i=1,ihist),maxstp,nstep, &
-         ndump,nprint,lplots,itime,dt0,nstep1,nonlin,m0dy,nocpl,noprevol_on, &
-         Adens,Bdens,LcA0,LcA1,LcA2,LcA3,omcy,dpres,ext_prof,epflr_on,r_epflr,alpha_on,iflr_on,iflr,twofl_on,ieldamp_on, &
-         omegar,bet0_alp,Adensalp,Bdensalp,LcA0alp,LcA1alp,LcA2alp,LcA3alp,omcyalp,r_epflralp,ext_prof_name, &
-         trapped_on,omcyb,rbound,B_par_on
-    write(7) mj,lmax,leqmax,mjm1
-    write(7) (r(j),j=0,mj),(mm(l),l=1,lmax),(nn(l),l=1,lmax),(mmeq(l),l=1,leqmax),(nneq(l),l=1,leqmax),(rinv(j),j=0,mj), &  
-         (dc1m(j),j=1,mj),(dc1p(j),j=1,mj),(dc2m(j),j=1,mj),(dc2p(j),j=1,mj),(del2cm(j),j=1,mj),(del2cp(j),j=1,mj)
-    write(7) ni,nis,ne,delta,rc,fti,fte
-    write(7) (qq(j),j=0,mj),(qqinv(j),j=0,mj),(preq(j),j=0,mj),(feq(j),j=0,mj), &
-         (cureq(j),j=0,mj),(denseq(j),j=0,mj),(teeq(j),j=0,mj),(nfeq(j),j=0,mj),(vfova(j),j=0,mj),(vzt_eq(j),j=0,mj), &
-         (tieq(j),j=0,mj),(vth_eq(j),j=0,mj)
-    if (alpha_on == 1) write(7) (nalpeq(j),j=0,mj),(valphaova(j),j=0,mj)
-    if (ext_prof == 1) then
-       write(7) (vAlfven(j),j=0,mj),(vtherm_elecP(j),j=0,mj)
-    else
-       write(7) (vtherm_elc(j),j=0,mj)
-    end if
-    write(7) ndevice(1),ndevice(2),eps,bet0,bet0_f,(rs(l),l=1,lmax)
-    write(7) ((sqgi(j,l),j=0,mj),l=1,leqmax),((sqg(j,l),j=0,mj),l=1,leqmax),((bst(j,l),j=0,mj),l=1,leqmax), &
-         ((grr(j,l),j=0,mj),l=1,leqmax),((grt(j,l),j=0,mj),l=1,leqmax),((gtt(j,l),j=0,mj),l=1,leqmax), &
-         ((grroj(j,l),j=0,mj),l=1,leqmax),((grtoj(j,l),j=0,mj),l=1,leqmax),((gttoj(j,l),j=0,mj),l=1,leqmax), &
-         ((jbgrr(j,l),j=0,mj),l=1,leqmax),((jbgrt(j,l),j=0,mj),l=1,leqmax),((jbgtt(j,l),j=0,mj),l=1,leqmax), &
-         ((lplrr(j,l),j=0,mj),l=1,leqmax),((lplrt(j,l),j=0,mj),l=1,leqmax),((lplrz(j,l),j=0,mj),l=1,leqmax), &
-         ((lpltt(j,l),j=0,mj),l=1,leqmax),((lpltz(j,l),j=0,mj),l=1,leqmax),((lplzz(j,l),j=0,mj),l=1,leqmax), &
-         ((lplr(j,l),j=0,mj),l=1,leqmax),((lplt(j,l),j=0,mj),l=1,leqmax),((lplz(j,l),j=0,mj),l=1,leqmax), &
-         ((djroj(j,l),j=0,mj),l=1,leqmax),((djtoj(j,l),j=0,mj),l=1,leqmax),((djzoj(j,l),j=0,mj),l=1,leqmax), &
-         ((omdr(j,l),j=0,mj),l=1,leqmax),((omdt(j,l),j=0,mj),l=1,leqmax),((omdz(j,l),j=0,mj),l=1,leqmax), &
-         ((bmod(j,l),j=0,mj),l=1,leqmax),((dbsjtoj(j,l),j=0,mj),l=1,leqmax),((dbsjzoj(j,l),j=0,mj),l=1,leqmax)
-    if (ieldamp_on == 1) write(7) ((eildr(j,l),j=0,mj),l=1,leqmax),((eildt(j,l),j=0,mj),l=1,leqmax), &
-         ((eildz(j,l),j=0,mj),l=1,leqmax),((eildrr(j,l),j=0,mj),l=1,leqmax), &
-         ((eildrt(j,l),j=0,mj),l=1,leqmax),((eildrz(j,l),j=0,mj),l=1,leqmax), &
-         ((eildtt(j,l),j=0,mj),l=1,leqmax),((eildtz(j,l),j=0,mj),l=1,leqmax), &
-         ((eildzz(j,l),j=0,mj),l=1,leqmax)
-    if (trapped_on == 1) write(7) ((omdrprp(j,l),j=0,mj),l=1,leqmax),((omdtprp(j,l),j=0,mj),l=1,leqmax), &
-         ((omdzprp(j,l),j=0,mj),l=1,leqmax)
+    call adios_open_write(confil)
 
-    write(7) (eta(j),j=0,mj),dt,time
+    call adios_put_i("ihist", ihist)
+    call adios_put_sarr("numrun", numrun)
+    call adios_put_sarr("numruno", numruno)
+    call adios_put_sarr("numruns", numruns)
+    call adios_put_sarr("numhist", numhist(1:ihist))
+    call adios_put_i("maxstp", maxstp)
+    call adios_put_i("nstep", nstep)
+    call adios_put_i("ndump", ndump)
+    call adios_put_i("nprint", nprint)
+    call adios_put_i("lplots", lplots)
+    call adios_put_i("itime", itime)
+    call adios_put_r("dt0", dt0)
+    call adios_put_i("nstep1", nstep1)
+    call adios_put_i("nonlin", nonlin)
+    call adios_put_i("m0dy", m0dy)
+    call adios_put_i("nocpl", nocpl)
+    call adios_put_i("noprevol_on", noprevol_on)
+    call adios_put_r("Adens", Adens)
+    call adios_put_r("Bdens", Bdens)
+    call adios_put_r("LcA0", LcA0)
+    call adios_put_r("LcA1", LcA1)
+    call adios_put_r("LcA2", LcA2)
+    call adios_put_r("LcA3", LcA3)
+    call adios_put_r("omcy", omcy)
+    call adios_put_r("dpres", dpres)
+    call adios_put_i("ext_prof", ext_prof)
+    call adios_put_i("epflr_on", epflr_on)
+    call adios_put_r("r_epflr", r_epflr)
+    call adios_put_i("alpha_on", alpha_on)
+    call adios_put_i("iflr_on", iflr_on)
+    call adios_put_r("iflr", iflr)
+    call adios_put_i("twofl_on", twofl_on)
+    call adios_put_i("ieldamp_on", ieldamp_on)
+    call adios_put_r("omegar", omegar)
+    call adios_put_r("bet0_alp", bet0_alp)
+    call adios_put_r("Adensalp", Adensalp)
+    call adios_put_r("Bdensalp", Bdensalp)
+    call adios_put_r("LcA0alp", LcA0alp)
+    call adios_put_r("LcA1alp", LcA1alp)
+    call adios_put_r("LcA2alp", LcA2alp)
+    call adios_put_r("LcA3alp", LcA3alp)
+    call adios_put_r("omcyalp", omcyalp)
+    call adios_put_r("r_epflralp", r_epflralp)
+    call adios_put_s("ext_prof_name", ext_prof_name)
+    call adios_put_i("trapped_on", trapped_on)
+    call adios_put_r("omcyb", omcyb)
+    call adios_put_r("rbound", rbound)
+    call adios_put_i("B_par_on", B_par_on)
 
-    write(7) ((psi(j,l),j=0,mj),l=1,lmax)
-    write(7) ((phi(j,l),j=0,mj),l=1,lmax)
-    write(7) ((pr(j,l),j=0,mj),l=1,lmax)
-    write(7) ((nf(j,l),j=0,mj),l=1,lmax)
-    write(7) ((vprlf(j,l),j=0,mj),l=1,lmax)
-    write(7) ((vthprlf(j,l),j=0,mj),l=1,lmax)
+    call adios_put_i("mj", mj)
+    call adios_put_i("lmax", lmax)
+    call adios_put_i("leqmax", leqmax)
+    call adios_put_i("mjm1", mjm1)
+
+    call adios_put_r1("r", r)
+    call adios_put_i1("mm", mm(1:lmax))
+    call adios_put_i1("nn", nn(1:lmax))
+    call adios_put_i1("mmeq", mmeq)
+    call adios_put_i1("nneq", nneq)
+    call adios_put_r1("rinv", rinv)
+    call adios_put_r1("dc1m", dc1m)
+    call adios_put_r1("dc1p", dc1p)
+    call adios_put_r1("dc2m", dc2m)
+    call adios_put_r1("dc2p", dc2p)
+    call adios_put_r1("del2cm", del2cm)
+    call adios_put_r1("del2cp", del2cp)
+
+    call adios_put_i("ni", ni)
+    call adios_put_i("nis", nis)
+    call adios_put_i("ne", ne)
+    call adios_put_r("delta", delta)
+    call adios_put_r("rc", rc)
+    call adios_put_r("fti", fti)
+    call adios_put_r("fte", fte)
+
+    call adios_put_r1("qq", qq)
+    call adios_put_r1("qqinv", qqinv)
+    call adios_put_r1("preq", preq)
+    call adios_put_r1("feq", feq)
+    call adios_put_r1("cureq", cureq)
+    call adios_put_r1("denseq", denseq)
+    call adios_put_r1("teeq", teeq)
+    call adios_put_r1("nfeq", nfeq)
+    call adios_put_r1("vfova", vfova)
+    call adios_put_r1("vzt_eq", vzt_eq)
+    call adios_put_r1("tieq", tieq)
+    call adios_put_r1("vth_eq", vth_eq)
     if (alpha_on == 1) then
-       write(7) ((nalp(j,l),j=0,mj),l=1,lmax)
-       write(7) ((vprlalp(j,l),j=0,mj),l=1,lmax)
+       call adios_put_r1("nalpeq", nalpeq)
+       call adios_put_r1("valphaova", valphaova)
+    end if
+    if (ext_prof == 1) then
+       call adios_put_r1("vAlfven", vAlfven)
+       call adios_put_r1("vtherm_elecP", vtherm_elecP)
+    else
+       call adios_put_r1("vtherm_elc", vtherm_elc)
+    end if
+    call adios_put_sarr("ndevice", ndevice)
+    call adios_put_r("eps", eps)
+    call adios_put_r("bet0", bet0)
+    call adios_put_r("bet0_f", bet0_f)
+    call adios_put_r1("rs", rs(1:lmax))
+
+    call adios_put_r2("sqgi", sqgi(:,1:leqmax))
+    call adios_put_r2("sqg", sqg(:,1:leqmax))
+    call adios_put_r2("bst", bst(:,1:leqmax))
+    call adios_put_r2("grr", grr(:,1:leqmax))
+    call adios_put_r2("grt", grt(:,1:leqmax))
+    call adios_put_r2("gtt", gtt(:,1:leqmax))
+    call adios_put_r2("grroj", grroj(:,1:leqmax))
+    call adios_put_r2("grtoj", grtoj(:,1:leqmax))
+    call adios_put_r2("gttoj", gttoj(:,1:leqmax))
+    call adios_put_r2("jbgrr", jbgrr(:,1:leqmax))
+    call adios_put_r2("jbgrt", jbgrt(:,1:leqmax))
+    call adios_put_r2("jbgtt", jbgtt(:,1:leqmax))
+    call adios_put_r2("lplrr", lplrr(:,1:leqmax))
+    call adios_put_r2("lplrt", lplrt(:,1:leqmax))
+    call adios_put_r2("lplrz", lplrz(:,1:leqmax))
+    call adios_put_r2("lpltt", lpltt(:,1:leqmax))
+    call adios_put_r2("lpltz", lpltz(:,1:leqmax))
+    call adios_put_r2("lplzz", lplzz(:,1:leqmax))
+    call adios_put_r2("lplr", lplr(:,1:leqmax))
+    call adios_put_r2("lplt", lplt(:,1:leqmax))
+    call adios_put_r2("lplz", lplz(:,1:leqmax))
+    call adios_put_r2("djroj", djroj(:,1:leqmax))
+    call adios_put_r2("djtoj", djtoj(:,1:leqmax))
+    call adios_put_r2("djzoj", djzoj(:,1:leqmax))
+    call adios_put_r2("omdr", omdr(:,1:leqmax))
+    call adios_put_r2("omdt", omdt(:,1:leqmax))
+    call adios_put_r2("omdz", omdz(:,1:leqmax))
+    call adios_put_r2("bmod", bmod(:,1:leqmax))
+    call adios_put_r2("dbsjtoj", dbsjtoj(:,1:leqmax))
+    call adios_put_r2("dbsjzoj", dbsjzoj(:,1:leqmax))
+
+    if (ieldamp_on == 1) then
+       call adios_put_r2("eildr", eildr(:,1:leqmax))
+       call adios_put_r2("eildt", eildt(:,1:leqmax))
+       call adios_put_r2("eildz", eildz(:,1:leqmax))
+       call adios_put_r2("eildrr", eildrr(:,1:leqmax))
+       call adios_put_r2("eildrt", eildrt(:,1:leqmax))
+       call adios_put_r2("eildrz", eildrz(:,1:leqmax))
+       call adios_put_r2("eildtt", eildtt(:,1:leqmax))
+       call adios_put_r2("eildtz", eildtz(:,1:leqmax))
+       call adios_put_r2("eildzz", eildzz(:,1:leqmax))
+    end if
+    if (trapped_on == 1) then
+       call adios_put_r2("omdrprp", omdrprp(:,1:leqmax))
+       call adios_put_r2("omdtprp", omdtprp(:,1:leqmax))
+       call adios_put_r2("omdzprp", omdzprp(:,1:leqmax))
     end if
 
-    write(7) etascl,reta,eta0,etalmb,ietaeq,stdifp,stdifu,stdifnf,stdifv,stdifvf, &
-         stdifnalp,stdifvalp,s,gamma,xle,ipert,(widthi(l),l=1,lmax),(gammai(l),l=1,lmax),pertscl
-    write(7) ext_prof_name,difnr_on,nopsievol_on,noprevol_on,nonfevol_on,nonalpevol_on, &
-         src_sink_th_on,src_sink_EP1_on,src_sink_EP2_on,src_sink_DIIID_on,src_sink_ITER_on,rsrc,wsrc,asrc, &
-         rsrc_EP1,wsrc_EP1,asrc_EP1,rsrc_EP2,wsrc_EP2,asrc_EP2,AWfctr,Nfctr,AWfctr_dif,Rfctr,Wfctr
-    write(7) (srcsinkth(i),i=0,10),(srcsinkEP1(i),i=0,10),(srcsinkEP2(i),i=0,10)
+    call adios_put_r1("eta", eta)
+    call adios_put_r("dt", dt)
+    call adios_put_r("time", time)
 
-    rewind(7)
-    close(unit=7)
-    write (6,'(/"  wrdump: have written fs",2a2,a1)') (numrun(i),i=1,3)
+    call adios_put_r2("psi", psi(:,1:lmax))
+    call adios_put_r2("phi", phi(:,1:lmax))
+    call adios_put_r2("pr", pr(:,1:lmax))
+    call adios_put_r2("nf", nf(:,1:lmax))
+    call adios_put_r2("vprlf", vprlf(:,1:lmax))
+    call adios_put_r2("vthprlf", vthprlf(:,1:lmax))
+    if (alpha_on == 1) then
+       call adios_put_r2("nalp", nalp(:,1:lmax))
+       call adios_put_r2("vprlalp", vprlalp(:,1:lmax))
+    end if
+
+    call adios_put_r("etascl", etascl)
+    call adios_put_r("reta", reta)
+    call adios_put_r("eta0", eta0)
+    call adios_put_r("etalmb", etalmb)
+    call adios_put_i("ietaeq", ietaeq)
+    call adios_put_r("stdifp", stdifp)
+    call adios_put_r("stdifu", stdifu)
+    call adios_put_r("stdifnf", stdifnf)
+    call adios_put_r("stdifv", stdifv)
+    call adios_put_r("stdifvf", stdifvf)
+    call adios_put_r("stdifnalp", stdifnalp)
+    call adios_put_r("stdifvalp", stdifvalp)
+    call adios_put_r("s", s)
+    call adios_put_r("gamma", gamma)
+    call adios_put_r("xle", xle)
+    call adios_put_i("ipert", ipert)
+    call adios_put_r1("widthi", widthi)
+    call adios_put_r1("gammai", gammai)
+    call adios_put_r("pertscl", pertscl)
+
+    call adios_put_i("difnr_on", difnr_on)
+    call adios_put_i("nopsievol_on", nopsievol_on)
+    call adios_put_i("nonfevol_on", nonfevol_on)
+    call adios_put_i("nonalpevol_on", nonalpevol_on)
+    call adios_put_i("src_sink_th_on", src_sink_th_on)
+    call adios_put_i("src_sink_EP1_on", src_sink_EP1_on)
+    call adios_put_i("src_sink_EP2_on", src_sink_EP2_on)
+    call adios_put_i("src_sink_DIIID_on", src_sink_DIIID_on)
+    call adios_put_i("src_sink_ITER_on", src_sink_ITER_on)
+    call adios_put_r("rsrc", rsrc)
+    call adios_put_r("wsrc", wsrc)
+    call adios_put_r("asrc", asrc)
+    call adios_put_r("rsrc_EP1", rsrc_EP1)
+    call adios_put_r("wsrc_EP1", wsrc_EP1)
+    call adios_put_r("asrc_EP1", asrc_EP1)
+    call adios_put_r("rsrc_EP2", rsrc_EP2)
+    call adios_put_r("wsrc_EP2", wsrc_EP2)
+    call adios_put_r("asrc_EP2", asrc_EP2)
+    call adios_put_r("AWfctr", AWfctr)
+    call adios_put_r("Nfctr", Nfctr)
+    call adios_put_r("AWfctr_dif", AWfctr_dif)
+    call adios_put_r("Rfctr", Rfctr)
+    call adios_put_r("Wfctr", Wfctr)
+
+    call adios_put_r1("srcsinkth", srcsinkth)
+    call adios_put_r1("srcsinkEP1", srcsinkEP1)
+    call adios_put_r1("srcsinkEP2", srcsinkEP2)
+
+    call adios_close_engine
+    write (6,'(/"  wrdump: have written ",a)') trim(confil)
 
   end subroutine wrdump
 

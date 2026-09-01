@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- ADIOS2 I/O configuration for FAR3d. The "restart" group is used by
+     wrdump/rddump (src/output_mod.f90) for the fs*.bp checkpoint datasets.
+     Engine/transport tuning (e.g. compression) belongs here, not in the
+     Fortran source. -->
+
+<adios-config>
+
+    <io name="restart">
+        <engine type="BP5"/>
+    </io>
+
+</adios-config>
