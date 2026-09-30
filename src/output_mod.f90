@@ -477,7 +477,7 @@ CONTAINS
     if (old_rd) write (0,'(" WARNING: old_rd is set but is no longer honored - ", &
          "restart reads only understand ADIOS2 .bp datasets")')
 
-    call adios_open_read("fs"//numruno(1)//numruno(2)//numruno(3)//".bp")
+    call adios_open_read("fs"//numruno(1)//numruno(2)//trim(numruno(3))//".bp")
 
     ! ihist itself is NOT re-read here: the caller (far3d.f90, before
     ! allocating numhist) already peeked ihist from this same file and set
@@ -711,6 +711,10 @@ CONTAINS
     ! original code) are always sourced from the namelist on resume, not
     ! restored here - matches historical behavior, not re-read.
 
+    ! The original trailing record re-read ext_prof_name here, i.e. AFTER the
+    ! namelists, so the dumped value overrides the namelist on resume.
+    call adios_get_s("ext_prof_name", ext_prof_name)
+
     call adios_get_i("difnr_on", difnr_on)
     call adios_get_i("nopsievol_on", nopsievol_on)
     call adios_get_i("noprevol_on", noprevol_on)
@@ -761,7 +765,7 @@ CONTAINS
     character(len=6) :: i_diag_str
 
     if (is_restart) then
-       confil="fs"//numrun(1)//numrun(2)//numrun(3)//".bp"
+       confil="fs"//numrun(1)//numrun(2)//trim(numrun(3))//".bp"
     else
        write(i_diag_str, '("_",I5.5)') i_diag
        confil="fs"//numrun(1)//numrun(2)//i_diag_str//".bp"

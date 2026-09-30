@@ -126,7 +126,7 @@ program far3d
      ! alpha_on/iflr_on/iflr/ieldamp_on/r_epflralp as namelist fallback
      ! defaults carried over from that run. rddump (called later, from
      ! resume) reopens the same file for the real read.
-     confil="fs"//numruno(1)//numruno(2)//numruno(3)//".bp"
+     confil="fs"//numruno(1)//numruno(2)//trim(numruno(3))//".bp"
      call adios_open_read(confil)
 
      call adios_get_i("ihist", ihist)

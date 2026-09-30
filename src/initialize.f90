@@ -55,6 +55,7 @@ CONTAINS
 
     psi=0.0_IDP
     phi=0.0_IDP
+    uzt=0.0_IDP
     pr=0.0_IDP
     nf=0.0_IDP
     vprlf=0.0_IDP
@@ -174,6 +175,15 @@ CONTAINS
          sc5(mj_start:mj_end,0:lmax),sc6(mj_start:mj_end,0:lmax),sc7(mj_start:mj_end,0:lmax),sc8(mj_start:mj_end,0:lmax), &
          sc9(mj_start:mj_end,0:lmax),sc10(mj_start:mj_end,0:lmax))
 
+    ! The dump holds only some columns of these (and never uzt): start from
+    ! zero rather than whatever the allocator hands back.
+    psi=0.0_IDP
+    phi=0.0_IDP
+    uzt=0.0_IDP
+    pr=0.0_IDP
+    nf=0.0_IDP
+    vprlf=0.0_IDP
+    vthprlf=0.0_IDP
     psip=0.0_IDP
     uztp=0.0_IDP
     prp=0.0_IDP
@@ -196,6 +206,8 @@ CONTAINS
        allocate (nalpp(mj_start:mj_end,0:lmax),vprlalpp(mj_start:mj_end,0:lmax))
        allocate (sc11(mj_start:mj_end,0:lmax),sc12(mj_start:mj_end,0:lmax))
        allocate (nalp_nl(mj_start:mj_end,0:lmax,3),vprlalp_nl(mj_start:mj_end,0:lmax,3))
+       nalp=0.0_IDP
+       vprlalp=0.0_IDP
        nalpp=0.0_IDP
        vprlalpp=0.0_IDP
        nalp_nl=0.0_IDP
