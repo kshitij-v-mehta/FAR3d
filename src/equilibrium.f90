@@ -1057,6 +1057,7 @@ CONTAINS
     use dbyd
     use fit_mod
     use scratch
+    use adios_io_mod
 
     implicit none
 
@@ -1064,6 +1065,7 @@ CONTAINS
          ir,jp,lp,nbst
     real(IDP) :: pror,dummy,twopi,twophip,one,gc,iota,iotap,pprime,qmin,qmax,p,xl,pprimel
     integer, dimension(:), allocatable :: llc,lls,lbst
+    real(IDP), dimension(:), allocatable :: rho_geom,q_geom
     real(IDP), dimension(:), allocatable :: rbinv,pfar,phip,curfar,ffar,sfar1,sfar2,sfar3,sfar4,rsb,Abst,Wbst
     real(IDP), dimension(:,:), allocatable :: rmnb,zmnb,pmnsb,sqgib,sqgb,grrb,grtb,gttb,bmodb,grrojb,grtojb,gttojb, &
          jbgrrb,jbgrtb,jbgttb
@@ -1511,28 +1513,27 @@ CONTAINS
 !          Write interpolated R_eq, Z_eq into geom_bzr_to_cyl file  9-19-2022
     !            Include Phimns_eq                                      8-11-2023
     if (myPE == 0) then
-       open(unit=30,file='geom_bzr_to_cyl.dat',status='unknown')
-       write(30,*) mj, lbmax, lasym
-       do l=1,lbmax
-          write(30,*) mmb(l),nnb(l)
-       end do
+       ! ADIOS2 replacement of the old geom_bzr_to_cyl.dat text file. 2-D
+       ! arrays are (radial j=0..mj) x (mode l=1..lbmax); rho = j/mj, q = 1/qqinv.
+       allocate (rho_geom(0:mj),q_geom(0:mj))
        do j=0,mj
-          write(30,*) real(j)/real(mj),1./qqinv(j)
+          rho_geom(j) = real(j,IDP)/real(mj,IDP)
+          q_geom(j) = 1./qqinv(j)
        end do
-       do l=1,lbmax
-          do j=0,mj
-             !	       if(lasym) then                  
-             !		  write(30,'(e15.8,5(2x,e15.8))') rmncbf(l,j), zmnsbf(l,j), pmnsbf(l,j),  &
-             !		           rmnsbf(l,j), zmncbf(l,j), pmncbf(l,j)
-             !	       else
-             !     	  	         write(30,'(e15.8,2(2x,e15.8))') R_eq(j,l), Z_eq(j,l), Phimns_eq(j,l)
-             !        Option to also include the Bmns:
-             write(30,'(e15.8,3(2x,e15.8))') R_eq(j,l), Z_eq(j,l),  &
-                  Phimns_eq(j,l), bmodeq(j,l)
-             !	       endif
-          end do
-       end do
-       close(unit=30)
+       call adios_open_write('geom_bzr_to_cyl.bp')
+       call adios_put_i("mj", mj)
+       call adios_put_i("lbmax", lbmax)
+       call adios_put_i("lasym", merge(1,0,lasym))
+       call adios_put_i1("mmb", mmb(1:lbmax))
+       call adios_put_i1("nnb", nnb(1:lbmax))
+       call adios_put_r1("rho", rho_geom)
+       call adios_put_r1("q", q_geom)
+       call adios_put_r2("R_eq", R_eq(:,1:lbmax))
+       call adios_put_r2("Z_eq", Z_eq(:,1:lbmax))
+       call adios_put_r2("Phimns_eq", Phimns_eq(:,1:lbmax))
+       call adios_put_r2("bmodeq", bmodeq(:,1:lbmax))
+       call adios_close_engine
+       deallocate (rho_geom,q_geom)
     end if
       
     ! Edge extrapolation
