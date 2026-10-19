@@ -27,12 +27,14 @@ MODULE adios_io_mod
   public :: adios_open_write, adios_open_read, adios_close_engine
   public :: adios_put_i, adios_put_r, adios_put_s, adios_put_sarr
   public :: adios_put_r1, adios_put_r2, adios_put_i1
+  public :: adios_has_var
   public :: adios_get_i, adios_get_r, adios_get_s, adios_get_sarr
   public :: adios_get_r1, adios_get_r2, adios_get_r2_slice, adios_get_i1
 
   type(adios2_adios), save :: adios_obj
   type(adios2_io), save :: io_restart
   type(adios2_engine), save :: engine_restart
+  logical, save :: engine_writing = .false.
 
   ! Strings are stored with this leading marker so that leading blanks (e.g.
   ! ndevice = " 2D equi") survive: adios2 stores strings as trim(adjustl()).
@@ -72,6 +74,18 @@ CONTAINS
     if (.not. var%valid) call adios_fail('variable not found in restart file', name)
 
   end subroutine adios_find
+
+  ! True if the open dataset contains variable `name`.
+  logical function adios_has_var(name)
+
+    character(*), intent(in) :: name
+    type(adios2_variable) :: var
+    integer :: ierr
+
+    call adios2_inquire_variable(var, io_restart, name, ierr)
+    adios_has_var = (ierr == adios2_error_none .and. var%valid)
+
+  end function adios_has_var
 
   ! Aborts unless variable `name` has exactly nd dimensions and its shape
   ! (first nd entries of `want`, entries <0 are not checked) is compatible:
@@ -123,10 +137,17 @@ CONTAINS
 
   end subroutine adios_finalize
 
-  subroutine adios_open_write(filename)
+  ! append=.true. adds a new step to an existing dataset (created if absent)
+  ! instead of truncating it; the caller brackets the puts in this step.
+  subroutine adios_open_write(filename, append)
 
     character(*), intent(in) :: filename
+    logical, intent(in), optional :: append
+    logical :: app
     integer :: ierr
+
+    app = .false.
+    if (present(append)) app = append
 
     ! io_restart is reused across every wrdump() call (one per dump file);
     ! drop any variable/attribute definitions left over from the previous
@@ -134,8 +155,15 @@ CONTAINS
     call adios2_remove_all_variables(io_restart, ierr)
     call adios2_remove_all_attributes(io_restart, ierr)
 
-    call adios2_open(engine_restart, io_restart, trim(filename), adios2_mode_write, ierr)
+    if (app) then
+       call adios2_open(engine_restart, io_restart, trim(filename), adios2_mode_append, ierr)
+    else
+       call adios2_open(engine_restart, io_restart, trim(filename), adios2_mode_write, ierr)
+    end if
     call adios_chk(ierr, 'cannot open for write', filename)
+    call adios2_begin_step(engine_restart, ierr)
+    call adios_chk(ierr, 'begin_step failed', filename)
+    engine_writing = .true.
 
   end subroutine adios_open_write
 
@@ -160,6 +188,11 @@ CONTAINS
 
     integer :: ierr
 
+    if (engine_writing) then
+       call adios2_end_step(engine_restart, ierr)
+       call adios_chk(ierr, 'end_step failed', 'engine')
+       engine_writing = .false.
+    end if
     call adios2_close(engine_restart, ierr)
     call adios_chk(ierr, 'close failed', 'engine')
 

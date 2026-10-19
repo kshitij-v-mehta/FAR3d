@@ -11,6 +11,9 @@ MODULE output_mod
 
   IMPLICIT NONE
 
+  ! Appended-dumps dataset of this series; stored in every restart file.
+  character(len=15), save :: dumps_file = ' '
+
 CONTAINS
 
   subroutine output
@@ -487,6 +490,9 @@ CONTAINS
     call adios_get_sarr("numrun", numruno)
     call adios_get_sarr("numruno", numrunp)
     call adios_get_sarr("numruns", numruns)
+    ! Name of the appended-dumps series this run continues (absent in restart
+    ! files written before the series existed: wrdump then derives it from numruns).
+    if (adios_has_var("dumps_file")) call adios_get_s("dumps_file", dumps_file)
     call adios_get_sarr("numhist", numhist(1:ihisto))
     call adios_get_i("maxstp", maxstp)
     call adios_get_i("nstep", nstep)
@@ -751,8 +757,8 @@ CONTAINS
   subroutine wrdump(i_diag, is_restart)
 
     ! Writes one self-describing ADIOS2 .bp restart dataset, replacing the
-    ! old positional big_endian binary chain - same one-dataset-per-dump
-    ! naming as before (numrun-based filename, now with a .bp suffix), just
+    ! old positional big_endian binary chain - one dataset for the
+    ! final restart plus one appended-step series for periodic dumps, just
     ! a named-variable/attribute container instead of an unnamed byte
     ! stream. Named variables mean write order no longer has to match the
     ! reader at all.
@@ -762,21 +768,33 @@ CONTAINS
     integer, intent(in) :: i_diag
     logical, intent(in) :: is_restart
     character(len=15) :: confil
-    character(len=6) :: i_diag_str
+    logical, save :: first_call = .true.
+    logical, save :: series_started = .false.
 
+    ! Periodic dumps are appended as successive steps of one dataset named
+    ! after the first run of the series (numruns, carried through the restart
+    ! files), so a continuation run appends to the original file. Only a new
+    ! run (nstres == 0) truncates any stale file on its first dump.
+    if (dumps_file == ' ') dumps_file = "fs"//numruns(1)//numruns(2)//"_dumps.bp"
+    if (first_call) then
+       series_started = (nstres /= 0)
+       first_call = .false.
+    end if
+    ! The final restart dump stays a separate single-step file.
     if (is_restart) then
        confil="fs"//numrun(1)//numrun(2)//trim(numrun(3))//".bp"
+       call adios_open_write(confil)
     else
-       write(i_diag_str, '("_",I5.5)') i_diag
-       confil="fs"//numrun(1)//numrun(2)//i_diag_str//".bp"
+       confil=dumps_file
+       call adios_open_write(confil, series_started)
+       series_started = .true.
     end if
-
-    call adios_open_write(confil)
 
     call adios_put_i("ihist", ihist)
     call adios_put_sarr("numrun", numrun)
     call adios_put_sarr("numruno", numruno)
     call adios_put_sarr("numruns", numruns)
+    call adios_put_s("dumps_file", dumps_file)
     call adios_put_sarr("numhist", numhist(1:ihist))
     call adios_put_i("maxstp", maxstp)
     call adios_put_i("nstep", nstep)
