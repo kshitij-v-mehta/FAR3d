@@ -28,12 +28,32 @@ MODULE adios_io_mod
   public :: adios_put_i, adios_put_r, adios_put_s, adios_put_sarr
   public :: adios_put_r1, adios_put_r2, adios_put_i1
   public :: adios_has_var
+  public :: adios_series, ser_hifreq, ser_diag, ser_snap
+  public :: adios_series_open, adios_series_begin, adios_series_end, adios_series_close
+  public :: ser_put_i, ser_put_r, ser_put_i1, ser_put_r1, ser_put_r2
   public :: adios_get_i, adios_get_r, adios_get_s, adios_get_sarr
   public :: adios_get_r1, adios_get_r2, adios_get_r2_slice, adios_get_i1
 
   type(adios2_adios), save :: adios_obj
   type(adios2_io), save :: io_restart
   type(adios2_engine), save :: engine_restart
+
+  ! A "series" is a long-lived output dataset (hifreq.bp, diagnostics.bp,
+  ! field_snapshots.bp) that stays open for the whole run; each output event
+  ! is one step. A continuation run reopens it in append mode, so the whole
+  ! chain of restarted runs accumulates in one file. Each series has its own
+  ! adios2_io (the "restart" io above is reused by every dump and is cleared
+  ! on each open, so it cannot be shared).
+  type adios_series
+     type(adios2_io) :: io
+     type(adios2_engine) :: engine
+     logical :: is_open = .false.
+     logical :: in_step = .false.
+     logical :: fresh = .false.   ! created (truncated) by this run
+     integer :: nsteps = 0        ! steps written by this run
+  end type adios_series
+
+  type(adios_series), save :: ser_hifreq, ser_diag, ser_snap
   logical, save :: engine_writing = .false.
 
   ! Strings are stored with this leading marker so that leading blanks (e.g.
@@ -132,6 +152,9 @@ CONTAINS
 
     integer :: ierr
 
+    call adios_series_close(ser_hifreq)
+    call adios_series_close(ser_diag)
+    call adios_series_close(ser_snap)
     call adios2_finalize(adios_obj, ierr)
     call adios_chk(ierr, 'adios2_finalize failed', 'finalize')
 
@@ -312,6 +335,172 @@ CONTAINS
     call adios_chk(ierr, 'put failed', name)
 
   end subroutine adios_put_i1
+
+
+  !==================  series (multi-step) helpers  ==================
+
+  ! append=.false. creates/truncates the file (new run); .true. adds steps to
+  ! the existing one (continuation run).
+  subroutine adios_series_open(s, ioname, filename, append)
+
+    type(adios_series), intent(inout) :: s
+    character(*), intent(in) :: ioname, filename
+    logical, intent(in) :: append
+    integer :: ierr
+
+    call adios2_declare_io(s%io, adios_obj, ioname, ierr)
+    call adios_chk(ierr, 'declare_io failed', ioname)
+    if (append) then
+       call adios2_open(s%engine, s%io, trim(filename), adios2_mode_append, ierr)
+    else
+       call adios2_open(s%engine, s%io, trim(filename), adios2_mode_write, ierr)
+    end if
+    call adios_chk(ierr, 'cannot open series for write', filename)
+    s%is_open = .true.
+    s%in_step = .false.
+    s%fresh = .not. append
+    s%nsteps = 0
+
+  end subroutine adios_series_open
+
+  subroutine adios_series_begin(s)
+
+    type(adios_series), intent(inout) :: s
+    integer :: ierr
+
+    if (.not. s%is_open) return
+    call adios2_begin_step(s%engine, ierr)
+    call adios_chk(ierr, 'begin_step failed', 'series')
+    s%in_step = .true.
+
+  end subroutine adios_series_begin
+
+  subroutine adios_series_end(s)
+
+    type(adios_series), intent(inout) :: s
+    integer :: ierr
+
+    if (.not. s%is_open .or. .not. s%in_step) return
+    call adios2_end_step(s%engine, ierr)
+    call adios_chk(ierr, 'end_step failed', 'series')
+    s%in_step = .false.
+    s%nsteps = s%nsteps + 1
+
+  end subroutine adios_series_end
+
+  subroutine adios_series_close(s)
+
+    type(adios_series), intent(inout) :: s
+    integer :: ierr
+
+    if (.not. s%is_open) return
+    if (s%in_step) call adios_series_end(s)
+    call adios2_close(s%engine, ierr)
+    call adios_chk(ierr, 'close failed', 'series')
+    s%is_open = .false.
+
+  end subroutine adios_series_close
+
+  ! Defines the variable on first use (per run) and returns it.
+  subroutine ser_var(s, var, name, atype, nd, shp)
+
+    type(adios_series), intent(inout) :: s
+    type(adios2_variable), intent(out) :: var
+    character(*), intent(in) :: name
+    integer, intent(in) :: atype, nd
+    integer(kind=8), intent(in) :: shp(:)
+    integer(kind=8) :: st(max(nd,1))
+    integer :: ierr
+
+    ! inquire reports "not found" through var%valid (some builds also set
+    ! ierr), so only valid matters here; define errors are checked below.
+    call adios2_inquire_variable(var, s%io, name, ierr)
+    if (var%valid) return
+    if (nd == 0) then
+       call adios2_define_variable(var, s%io, name, atype, ierr)
+    else
+       st = 0
+       call adios2_define_variable(var, s%io, name, atype, nd, shp(1:nd), st(1:nd), shp(1:nd), &
+            adios2_constant_dims, ierr)
+    end if
+    call adios_chk(ierr, 'define failed', name)
+
+  end subroutine ser_var
+
+  subroutine ser_put_i(s, name, val)
+
+    type(adios_series), intent(inout) :: s
+    character(*), intent(in) :: name
+    integer, intent(in) :: val
+    type(adios2_variable) :: var
+    integer :: ierr
+
+    if (.not. s%is_open) return
+    call ser_var(s, var, name, adios2_type_integer4, 0, (/0_8/))
+    call adios2_put(s%engine, var, val, adios2_mode_sync, ierr)
+    call adios_chk(ierr, 'put failed', name)
+
+  end subroutine ser_put_i
+
+  subroutine ser_put_r(s, name, val)
+
+    type(adios_series), intent(inout) :: s
+    character(*), intent(in) :: name
+    real(IDP), intent(in) :: val
+    type(adios2_variable) :: var
+    integer :: ierr
+
+    if (.not. s%is_open) return
+    call ser_var(s, var, name, adios2_type_dp, 0, (/0_8/))
+    call adios2_put(s%engine, var, val, adios2_mode_sync, ierr)
+    call adios_chk(ierr, 'put failed', name)
+
+  end subroutine ser_put_r
+
+  subroutine ser_put_i1(s, name, val)
+
+    type(adios_series), intent(inout) :: s
+    character(*), intent(in) :: name
+    integer, dimension(:), intent(in) :: val
+    type(adios2_variable) :: var
+    integer :: ierr
+
+    if (.not. s%is_open) return
+    call ser_var(s, var, name, adios2_type_integer4, 1, (/int(size(val,1),8)/))
+    call adios2_put(s%engine, var, val, adios2_mode_sync, ierr)
+    call adios_chk(ierr, 'put failed', name)
+
+  end subroutine ser_put_i1
+
+  subroutine ser_put_r1(s, name, val)
+
+    type(adios_series), intent(inout) :: s
+    character(*), intent(in) :: name
+    real(IDP), dimension(:), intent(in) :: val
+    type(adios2_variable) :: var
+    integer :: ierr
+
+    if (.not. s%is_open) return
+    call ser_var(s, var, name, adios2_type_dp, 1, (/int(size(val,1),8)/))
+    call adios2_put(s%engine, var, val, adios2_mode_sync, ierr)
+    call adios_chk(ierr, 'put failed', name)
+
+  end subroutine ser_put_r1
+
+  subroutine ser_put_r2(s, name, val)
+
+    type(adios_series), intent(inout) :: s
+    character(*), intent(in) :: name
+    real(IDP), dimension(:,:), intent(in) :: val
+    type(adios2_variable) :: var
+    integer :: ierr
+
+    if (.not. s%is_open) return
+    call ser_var(s, var, name, adios2_type_dp, 2, (/int(size(val,1),8), int(size(val,2),8)/))
+    call adios2_put(s%engine, var, val, adios2_mode_sync, ierr)
+    call adios_chk(ierr, 'put failed', name)
+
+  end subroutine ser_put_r2
 
   !==================  read helpers  ==================
 

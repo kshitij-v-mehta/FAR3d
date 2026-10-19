@@ -297,81 +297,29 @@ CONTAINS
        end do
        lwrt=abs(lplots)
        if (lwrt > lmax) lwrt=lmax
-       write(confil,'("phi_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,phi(j,l),l=1,lwrt)
-       end do
-       close(92)
-       write(confil,'("psi_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,psi(j,l),l=1,lwrt)
-       end do
-       close(92)
-       write(confil,'("pr_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,pr(j,l),l=1,lwrt)
-       end do
-       close(92)
-       write(confil,'("vr_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
-       end do
-       close(92)
-       write(confil,'("nf_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,nf(j,l),l=1,lwrt)
-       end do
-       close(92)
-       write(confil,'("vprlf_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,vprlf(j,l),l=1,lwrt)
-       end do
-       close(92)
-       write(confil,'("vthprlf_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,vthprlf(j,l),l=1,lwrt)
-       end do
-       close(92)
+       ! One field_snapshots.bp step per run: every field is (radial j=0..mj) x
+       ! (mode l=1..lwrt), labelled by mode_m/mode_n; r is the radial grid.
+       call adios_series_begin(ser_snap)
+       call ser_put_r(ser_snap,"time",time)
+       call ser_put_i(ser_snap,"nstep",nstep)
+       call ser_put_r1(ser_snap,"r",r(0:mj))
+       call ser_put_i1(ser_snap,"mode_m",mm(1:lwrt))
+       call ser_put_i1(ser_snap,"mode_n",nn(1:lwrt))
+       call ser_put_r2(ser_snap,"phi",phi(0:mj,1:lwrt))
+       call ser_put_r2(ser_snap,"psi",psi(0:mj,1:lwrt))
+       call ser_put_r2(ser_snap,"pr",pr(0:mj,1:lwrt))
+       call ser_put_r2(ser_snap,"vr",uzt(0:mj,1:lwrt))
+       call ser_put_r2(ser_snap,"nf",nf(0:mj,1:lwrt))
+       call ser_put_r2(ser_snap,"vprlf",vprlf(0:mj,1:lwrt))
+       call ser_put_r2(ser_snap,"vthprlf",vthprlf(0:mj,1:lwrt))
        if (alpha_on == 1) then
-          write(confil,'("nalp_",2a2)') numrun(1),numrun(2)
-          open(unit=92,file=confil,recl=19384)
-          write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-          do j=0,mj
-             write(92,formatv) r(j),(tb,nalp(j,l),l=1,lwrt)
-          end do
-          close(92)
-          write(confil,'("vprlalp_",2a2)') numrun(1),numrun(2)
-          open(unit=92,file=confil,recl=19384)
-          write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-          do j=0,mj
-             write(92,formatv) r(j),(tb,vprlalp(j,l),l=1,lwrt)
-          end do
-          close(92)
+          call ser_put_r2(ser_snap,"nalp",nalp(0:mj,1:lwrt))
+          call ser_put_r2(ser_snap,"vprlalp",vprlalp(0:mj,1:lwrt))
        end if
 
        !  vth up
        call dbydr(uzt,phi,0.0_IDP,eps,0)
-       write(confil,'("vth_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
-       end do
-       close(92)
+       call ser_put_r2(ser_snap,"vth",uzt(0:mj,1:lwrt))
     end if
 
     !  br up
@@ -382,38 +330,20 @@ CONTAINS
     call multed(uzt,sqgi,1,sc3,-1,0.0_IDP,1.0_IDP)
     call trnsfr0(uzt,-1)
     if (myPE == 0) then
-       write(confil,'("br_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
-       end do
-       close(92)
+       call ser_put_r2(ser_snap,"br",uzt(0:mj,1:lwrt))
     end if
 
     call multed(uzt,sqgi,1,sc5,1,0.0_IDP,1.0_IDP)
     call trnsfr0(uzt,1)
     if (myPE == 0) then
-       write(confil,'("bth_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
-       end do
-       close(92)
+       call ser_put_r2(ser_snap,"bth",uzt(0:mj,1:lwrt))
     end if
 
     call delstar(uzt,psi,1,sc2,sc3,sceq1,0.0_IDP,1.0_IDP)
     uzt=eps*uzt
     call trnsfr0(uzt,1)
     if (myPE == 0) then
-       write(confil,'("curzt_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
-       end do
-       close(92)
+       call ser_put_r2(ser_snap,"curzt",uzt(0:mj,1:lwrt))
     end if
 
     !  restore uzt-values
@@ -449,13 +379,8 @@ CONTAINS
              end do
           end if
        end do
-       write(confil,'("uzt_",2a2)') numrun(1),numrun(2)
-       open(unit=92,file=confil,recl=19384)
-       write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
-       do j=0,mj
-          write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
-       end do
-       close(92)
+       call ser_put_r2(ser_snap,"uzt",uzt(0:mj,1:lwrt))
+       call adios_series_end(ser_snap)
     end if
 
   end subroutine endrun
@@ -1009,5 +934,268 @@ CONTAINS
     write (6,'(/"  wrdump: have written ",a)') trim(confil)
 
   end subroutine wrdump
+
+
+!======================================================================
+! LEGACY TEXT OUTPUT (pre-ADIOS2). Kept so it can be switched back on:
+!   uncomment (delete the "!LEG " prefix) and call endrun_text instead of endrun
+!======================================================================
+!LEG   subroutine endrun_text
+!LEG
+!LEG     use processor
+!LEG     use var_para
+!LEG     use dbyd
+!LEG     use mult_mod
+!LEG     use transfer
+!LEG
+!LEG     implicit none
+!LEG
+!LEG     integer :: i,j,l,lwrt,l2t,mnum
+!LEG     real(IDP) :: scmn,scmx,sclmn,sclmx
+!LEG     real(IDP), dimension(:), allocatable :: scnorm
+!LEG     character(len=1) :: tb
+!LEG     character(len=12) :: confil
+!LEG     character(len=32) :: formatt='("r",1200(a1,i4,"/",i4))'
+!LEG     character(len=32) :: formatv='(1pe13.6,1200(a1,1pe15.8))'
+!LEG
+!LEG     interface
+!LEG        subroutine delstar(ss,ff,itypf,wk1,wk2,wkeq1,c1,c2)
+!LEG          use param
+!LEG          use var_para
+!LEG          implicit none
+!LEG          integer :: itypf
+!LEG          real(IDP) :: c1,c2
+!LEG          real(IDP), dimension(mj_start:,0:) :: ss,ff,wk1,wk2
+!LEG          real(IDP), dimension(0:,0:) :: wkeq1
+!LEG        end subroutine delstar
+!LEG     end interface
+!LEG
+!LEG     tb=char(9)
+!LEG
+!LEG     !  store uzt-values into sc4
+!LEG
+!LEG     do l=1,lmax
+!LEG        sc4(:,l)=uzt(mj_start:mj_end,l)
+!LEG     end do
+!LEG
+!LEG     allocate (scnorm(nnum))
+!LEG     scnorm=1.0_IDP
+!LEG
+!LEG     if (myPE == 0) then
+!LEG
+!LEG        !  vr up
+!LEG        call dbydth(uzt,phi,-1,0.0_IDP,-eps,0)
+!LEG
+!LEG        do i=1,nnum
+!LEG           mnum=mnumn(i)
+!LEG           if (nonlin == 0) then
+!LEG              scmn=0.
+!LEG              scmx=0.
+!LEG              do l2t=1,mnum
+!LEG                 l=l2t+lnumn(i-1)
+!LEG                 sclmn=minval(uzt(:,lln(l)))
+!LEG                 sclmx=maxval(uzt(:,lln(l)))
+!LEG                 scmn=min(scmn,sclmn)
+!LEG                 scmx=max(scmx,sclmx)
+!LEG              end do
+!LEG              if (scmx > abs(scmn)) then
+!LEG                 scnorm(i)=scmx
+!LEG              else
+!LEG                 scnorm(i)=scmn
+!LEG              endif
+!LEG           end if
+!LEG           if(scnorm(i) /= 0.0_IDP) then
+!LEG              do l2t=1,mnum
+!LEG                 l=l2t+lnumn(i-1)
+!LEG                 psi(:,lln(l))=psi(:,lln(l))/scnorm(i)
+!LEG                 where (abs(psi(:,lln(l))) < 1.e-50_IDP) psi(:,lln(l))=0
+!LEG                 phi(:,lln(l))=phi(:,lln(l))/scnorm(i)
+!LEG                 where (abs(phi(:,lln(l))) < 1.e-50_IDP) phi(:,lln(l))=0
+!LEG                 pr(:,lln(l))=pr(:,lln(l))/scnorm(i)
+!LEG                 where (abs(pr(:,lln(l))) < 1.e-50_IDP) pr(:,lln(l))=0
+!LEG                 nf(:,lln(l))=nf(:,lln(l))/scnorm(i)
+!LEG                 where (abs(nf(:,lln(l))) < 1.e-50_IDP) nf(:,lln(l))=0
+!LEG                 vprlf(:,lln(l))=vprlf(:,lln(l))/scnorm(i)
+!LEG                 where (abs(vprlf(:,lln(l))) < 1.e-50_IDP) vprlf(:,lln(l))=0
+!LEG                 vthprlf(:,lln(l))=vthprlf(:,lln(l))/scnorm(i)
+!LEG                 where (abs(vthprlf(:,lln(l))) < 1.e-50_IDP) vthprlf(:,lln(l))=0
+!LEG                 uzt(:,lln(l))=uzt(:,lln(l))/scnorm(i)
+!LEG                 where (abs(uzt(:,lln(l))) < 1.e-50_IDP) uzt(:,lln(l))=0
+!LEG              end do
+!LEG              if (alpha_on == 1) then
+!LEG                 do l2t=1,mnum
+!LEG                    l=l2t+lnumn(i-1)
+!LEG                    nalp(:,lln(l))=nalp(:,lln(l))/scnorm(i)
+!LEG                    where (abs(nalp(:,lln(l))) < 1.e-50_IDP) nalp(:,lln(l))=0
+!LEG                    vprlalp(:,lln(l))=vprlalp(:,lln(l))/scnorm(i)
+!LEG                    where (abs(vprlalp(:,lln(l))) < 1.e-50_IDP) vprlalp(:,lln(l))=0
+!LEG                 end do
+!LEG              end if
+!LEG           end if
+!LEG        end do
+!LEG        lwrt=abs(lplots)
+!LEG        if (lwrt > lmax) lwrt=lmax
+!LEG        write(confil,'("phi_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,phi(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG        write(confil,'("psi_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,psi(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG        write(confil,'("pr_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,pr(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG        write(confil,'("vr_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG        write(confil,'("nf_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,nf(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG        write(confil,'("vprlf_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,vprlf(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG        write(confil,'("vthprlf_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,vthprlf(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG        if (alpha_on == 1) then
+!LEG           write(confil,'("nalp_",2a2)') numrun(1),numrun(2)
+!LEG           open(unit=92,file=confil,recl=19384)
+!LEG           write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG           do j=0,mj
+!LEG              write(92,formatv) r(j),(tb,nalp(j,l),l=1,lwrt)
+!LEG           end do
+!LEG           close(92)
+!LEG           write(confil,'("vprlalp_",2a2)') numrun(1),numrun(2)
+!LEG           open(unit=92,file=confil,recl=19384)
+!LEG           write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG           do j=0,mj
+!LEG              write(92,formatv) r(j),(tb,vprlalp(j,l),l=1,lwrt)
+!LEG           end do
+!LEG           close(92)
+!LEG        end if
+!LEG
+!LEG        !  vth up
+!LEG        call dbydr(uzt,phi,0.0_IDP,eps,0)
+!LEG        write(confil,'("vth_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG     end if
+!LEG
+!LEG     !  br up
+!LEG     call dbydth_par(sc3,psi,1,0.0_IDP,-eps,0)
+!LEG     !  bth up
+!LEG     call dbydr_par(sc5,psi,0.0_IDP,eps,0)
+!LEG
+!LEG     call multed(uzt,sqgi,1,sc3,-1,0.0_IDP,1.0_IDP)
+!LEG     call trnsfr0(uzt,-1)
+!LEG     if (myPE == 0) then
+!LEG        write(confil,'("br_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG     end if
+!LEG
+!LEG     call multed(uzt,sqgi,1,sc5,1,0.0_IDP,1.0_IDP)
+!LEG     call trnsfr0(uzt,1)
+!LEG     if (myPE == 0) then
+!LEG        write(confil,'("bth_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG     end if
+!LEG
+!LEG     call delstar(uzt,psi,1,sc2,sc3,sceq1,0.0_IDP,1.0_IDP)
+!LEG     uzt=eps*uzt
+!LEG     call trnsfr0(uzt,1)
+!LEG     if (myPE == 0) then
+!LEG        write(confil,'("curzt_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG     end if
+!LEG
+!LEG     !  restore uzt-values
+!LEG
+!LEG     do l=1,lmax
+!LEG        uzt(mj_start:mj_end,l)=sc4(:,l)
+!LEG     end do
+!LEG     call trnsfr0(uzt,1)
+!LEG     if (myPE == 0) then
+!LEG        do i=1,nnum
+!LEG           mnum=mnumn(i)
+!LEG           if (nonlin == 0) then
+!LEG              scmn=0.
+!LEG              scmx=0.
+!LEG              do l2t=1,mnum
+!LEG                 l=l2t+lnumn(i-1)
+!LEG                 sclmn=minval(uzt(:,lln(l)))
+!LEG                 sclmx=maxval(uzt(:,lln(l)))
+!LEG                 scmn=min(scmn,sclmn)
+!LEG                 scmx=max(scmx,sclmx)
+!LEG              end do
+!LEG              if (scmx > abs(scmn)) then
+!LEG                 scnorm(i)=scmx
+!LEG              else
+!LEG                 scnorm(i)=scmn
+!LEG              endif
+!LEG           end if
+!LEG           if(scnorm(i) /= 0.0_IDP) then
+!LEG              do l2t=1,mnum
+!LEG                 l=l2t+lnumn(i-1)
+!LEG                 uzt(:,lln(l))=uzt(:,lln(l))/scnorm(i)
+!LEG                 where (abs(uzt(:,lln(l))) < 1.e-50_IDP) uzt(:,lln(l))=0
+!LEG              end do
+!LEG           end if
+!LEG        end do
+!LEG        write(confil,'("uzt_",2a2)') numrun(1),numrun(2)
+!LEG        open(unit=92,file=confil,recl=19384)
+!LEG        write(92,formatt) (tb,mm(l),nn(l),l=1,lwrt)
+!LEG        do j=0,mj
+!LEG           write(92,formatv) r(j),(tb,uzt(j,l),l=1,lwrt)
+!LEG        end do
+!LEG        close(92)
+!LEG     end if
+!LEG
+!LEG   end subroutine endrun_text
 
 END MODULE output_mod

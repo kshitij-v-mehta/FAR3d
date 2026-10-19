@@ -271,21 +271,29 @@ program far3d
 
      call output
 
-     if(nonlin .ne. 0 .and. myPE == 0) then
-        hifrq_out="hifrq_"//numrun(1)//numrun(2)
-        phi_hifrq_out="phi_hifrq_"//numrun(1)//numrun(2)
-        open(unit=82,file=hifrq_out,status='unknown',form='formatted')
-        open(unit=77,file=phi_hifrq_out,status='unknown',form='formatted')
-        if(nstres .eq. 0) write(82, &
-             '("time",a1,"bth_r.2",a1,"bth_r.4",a1,"bth_r.6",a1,"bth_r.8", &
-             a1,"bth_r1",a1,"avg(phi)",a1,"avg(psi)",a1,"avg(denf)",a1,"avg(vprlf)")') t,t,t,t,t,t,t,t,t 
-        if(nstres .eq. 0) write(77, &
-             '("time",a1,"phi_r.1",a1,"phi_r.2",a1,"phi_r.3",a1,"phi_r.4",a1,"phi_r.5",  &
-             a1,"phi00_r.1",a1,"phi00_r.2",a1,"phi00_r.3",a1,"phi00_r.4",   &
-             a1,"phi00_r.5")') t,t,t,t,t,t,t,t,t,t
-        close(unit=82)
-        close(unit=77)
-     endif
+     ! Series datasets, appended to by every run of a restart chain
+     ! (a new run, nstres == 0, starts them afresh).
+     call adios_series_open(ser_diag,"diagnostics","diagnostics.bp",nstres /= 0)
+     call adios_series_open(ser_snap,"field_snapshots","field_snapshots.bp",nstres /= 0)
+     if (nonlin .ne. 0) call adios_series_open(ser_hifreq,"hifreq","hifreq.bp",nstres /= 0)
+
+     ! LEGACY TEXT OUTPUT (pre-ADIOS2) - to switch back, uncomment this block
+     ! and the hifreq_text/energy_text/endrun_text routines (see diagnostics.f90, output_mod.f90):
+!LEG      if(nonlin .ne. 0 .and. myPE == 0) then
+!LEG         hifrq_out="hifrq_"//numrun(1)//numrun(2)
+!LEG         phi_hifrq_out="phi_hifrq_"//numrun(1)//numrun(2)
+!LEG         open(unit=82,file=hifrq_out,status='unknown',form='formatted')
+!LEG         open(unit=77,file=phi_hifrq_out,status='unknown',form='formatted')
+!LEG         if(nstres .eq. 0) write(82, &
+!LEG              '("time",a1,"bth_r.2",a1,"bth_r.4",a1,"bth_r.6",a1,"bth_r.8", &
+!LEG              a1,"bth_r1",a1,"avg(phi)",a1,"avg(psi)",a1,"avg(denf)",a1,"avg(vprlf)")') t,t,t,t,t,t,t,t,t 
+!LEG         if(nstres .eq. 0) write(77, &
+!LEG              '("time",a1,"phi_r.1",a1,"phi_r.2",a1,"phi_r.3",a1,"phi_r.4",a1,"phi_r.5",  &
+!LEG              a1,"phi00_r.1",a1,"phi00_r.2",a1,"phi00_r.3",a1,"phi00_r.4",   &
+!LEG              a1,"phi00_r.5")') t,t,t,t,t,t,t,t,t,t
+!LEG         close(unit=82)
+!LEG         close(unit=77)
+!LEG      endif
 
      !  The model parameter are saved in fs####z file
 
@@ -355,15 +363,21 @@ program far3d
 
         !   Write high-frequency (every time step) data:
         if(nonlin .ne. 0) then
-           if(nstep .ge. nstep1+1 .and. myPE .eq. 0) then
-              open(unit=82,file=hifrq_out,position='append',status='unknown')
-              open(unit=77,file=phi_hifrq_out,position='append',status='unknown')
-           endif
            if(nstep .lt. nstep1+maxstp) call hifreq(.false.)
            if(nstep .eq. nstep1+maxstp) call hifreq(.true.)
-           close(unit=82)
-           close(unit=77)
         endif
+        ! LEGACY TEXT OUTPUT (pre-ADIOS2) - original block, uncomment to switch back
+        ! (and call hifreq_text instead of hifreq above):
+!LEG         if(nonlin .ne. 0) then
+!LEG            if(nstep .ge. nstep1+1 .and. myPE .eq. 0) then
+!LEG               open(unit=82,file=hifrq_out,position='append',status='unknown')
+!LEG               open(unit=77,file=phi_hifrq_out,position='append',status='unknown')
+!LEG            endif
+!LEG            if(nstep .lt. nstep1+maxstp) call hifreq_text(.false.)
+!LEG            if(nstep .eq. nstep1+maxstp) call hifreq_text(.true.)
+!LEG            close(unit=82)
+!LEG            close(unit=77)
+!LEG         endif
 
      end do
 

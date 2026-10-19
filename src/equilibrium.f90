@@ -2437,4 +2437,33 @@ CONTAINS
 
   end subroutine ae_profiles
 
+!======================================================================
+! LEGACY TEXT OUTPUT (pre-ADIOS2) of geom_bzr_to_cyl.dat. To switch back,
+! uncomment (delete the "!LEG " prefix) and call geom_bzr_to_cyl_text(bmodeq)
+! in vmec in place of the adios_* block that writes geom_bzr_to_cyl.bp.
+!======================================================================
+!LEG   subroutine geom_bzr_to_cyl_text(bmodeq)
+!LEG     use processor
+!LEG     implicit none
+!LEG     real(IDP), dimension(0:,0:), intent(in) :: bmodeq
+!LEG     integer :: j,l
+!LEG     if (myPE == 0) then
+!LEG        open(unit=30,file='geom_bzr_to_cyl.dat',status='unknown')
+!LEG        write(30,*) mj, lbmax, lasym
+!LEG        do l=1,lbmax
+!LEG           write(30,*) mmb(l),nnb(l)
+!LEG        end do
+!LEG        do j=0,mj
+!LEG           write(30,*) real(j)/real(mj),1./qqinv(j)
+!LEG        end do
+!LEG        do l=1,lbmax
+!LEG           do j=0,mj
+!LEG              write(30,'(e15.8,3(2x,e15.8))') R_eq(j,l), Z_eq(j,l),  &
+!LEG                   Phimns_eq(j,l), bmodeq(j,l)
+!LEG           end do
+!LEG        end do
+!LEG        close(unit=30)
+!LEG     end if
+!LEG   end subroutine geom_bzr_to_cyl_text
+
 END MODULE equilibrium
