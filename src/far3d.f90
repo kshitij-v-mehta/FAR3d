@@ -31,6 +31,7 @@ program far3d
   use adios_io_mod
   
   implicit none
+  integer :: lrank, nodecomm
 
   namelist/nam_par/maxstp,ndump,nprint,ndiag,lplots,itime,dt0,nonlin,mj,lmax,leqmax,ni,nis,ne,delta,rc,fti,fte, &
        difnr_on,stdifp,stdifu,stdifv,eps,bet0,etascl,reta,eta0,etalmb,ietaeq, &
@@ -82,7 +83,13 @@ program far3d
   ! MPI_COMM_SELF rather than MPI_COMM_WORLD - see src/adios_io_mod.f90.
   call adios_init(MPI_COMM_SELF)
   numdev = acc_get_num_devices(ACC_DEVICE_NVIDIA)
-  call acc_set_device_num(myPE,ACC_DEVICE_NVIDIA)
+  ! Bind each rank to a GPU by its node-local rank (ranks > GPUs/node wrap).
+  ! The node-local rank comes from MPI itself, so this is independent of the
+  ! launcher and scheduler.
+  call MPI_COMM_SPLIT_TYPE(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, nodecomm, ierror)
+  call MPI_COMM_RANK(nodecomm, lrank, ierror)
+  call MPI_COMM_FREE(nodecomm, ierror)
+  call acc_set_device_num(mod(lrank,max(numdev,1)),ACC_DEVICE_NVIDIA)
   call acc_init(ACC_DEVICE_NVIDIA)
   
   ! if (myPE == 0) write(0,'(" ====> Checking input list ... ")')
