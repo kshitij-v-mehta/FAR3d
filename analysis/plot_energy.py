@@ -8,6 +8,7 @@ sum over poloidal modes m for each n is done by label (mode_n), not by
 hard-coded column positions.
 
     plot_energy.py [diagnostics.bp] [--var ekenc] [--tau-a 2.4249e-07]
+                   [--dataset diagnostics]   (when reading a campaign: run.aca)
                    [--out energy.png] [--csv energy_vs_tor_mode.csv] [--show]
 
 Variables of diagnostics.bp usable with --var (all per-mode, labelled by
@@ -20,20 +21,21 @@ import numpy as np
 from adios2 import FileReader
 
 
-def read_series(path, var):
+def read_series(path, var, prefix=""):
     """Returns (time[nt], n_values[], energy[nt, n]) with the energy summed over
     all poloidal modes m of each toroidal mode number n, for every energy step."""
     with FileReader(path) as f:
         avail = f.available_variables()
-        for need in ("time", "mode_n", var):
+        var = prefix + var
+        for need in (prefix + "time", prefix + "mode_n", var):
             if need not in avail:
                 sys.exit(f"{path}: variable '{need}' not found (has: {sorted(avail)[:8]}...)")
-        nt = int(avail["time"]["AvailableStepsCount"])
+        nt = int(avail[prefix + "time"]["AvailableStepsCount"])
         times = np.empty(nt)
         per_step = []
         for i in range(nt):
-            times[i] = np.ravel(f.read("time", step_selection=[i, 1]))[0]
-            n = f.read("mode_n", step_selection=[i, 1]).ravel()
+            times[i] = np.ravel(f.read(prefix + "time", step_selection=[i, 1]))[0]
+            n = f.read(prefix + "mode_n", step_selection=[i, 1]).ravel()
             e = f.read(var, step_selection=[i, 1]).ravel()
             per_step.append((n, e))
     nvals = np.unique(np.concatenate([n for n, _ in per_step]))
@@ -48,6 +50,8 @@ def read_series(path, var):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("file", nargs="?", default="diagnostics.bp")
+    ap.add_argument("--dataset", default="",
+                    help="dataset name inside an hpc-campaign archive (FILE.aca), e.g. diagnostics")
     ap.add_argument("--var", default="ekenc", help="energy variable (default ekenc, as the old plots)")
     ap.add_argument("--tau-a", type=float, default=2.4249e-07,
                     help="Alfven time in s used to scale time (default: ITER steady state, 2.4249e-07)")
@@ -56,7 +60,7 @@ def main():
     ap.add_argument("--show", action="store_true", help="open an interactive window")
     a = ap.parse_args()
 
-    t, nvals, e = read_series(a.file, a.var)
+    t, nvals, e = read_series(a.file, a.var, a.dataset + "/" if a.dataset else "")
     t = t * a.tau_a
 
     if a.csv:
